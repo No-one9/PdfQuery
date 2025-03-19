@@ -1,0 +1,54 @@
+<html>
+    <head>
+        <title>
+            RAG Question Answering
+        </title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+            #response { margin-top: 20px; white-space: pre-wrap; }
+        </style>
+    </head>
+    <body>
+        <h1>
+            Ask Question
+        </h1>
+        <input type="text" id="queryInput" placeholder="Enter your Question" style="width: 300px; padding: 8px;">
+        <button onclick="askQuestion()">Ask</button>
+        <div id="response"></div>
+        <script>
+            async function askQuestion() {
+            const query = document.getElementById('queryInput').value;
+            const responseDiv = document.getElementById('response');
+            
+            if (!query) {
+                responseDiv.textContent = "Please enter a question.";
+                return;
+            }
+
+            try {
+                const response = await fetch('/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    responseDiv.textContent = `Error: ${data.error}`;
+                } else {
+                    // responseDiv.textContent = data.answer;
+                    responseDiv.innerHTML=`
+                        <p><strong>Answer:</strong>${data.answer}</p>
+                        <p><strong>Source:</strong>${data.source}</p>
+                        <p><strong>Confidence:</strong>${data.confidence.toFixed(2)}</p>
+                    
+                    `;
+                }
+            } catch (error) {
+                responseDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+        </script>
+    </body>
+</html>
