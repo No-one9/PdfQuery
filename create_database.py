@@ -1,20 +1,184 @@
+# import re
+# import sqlite3
+# import pdfplumber
+# from pathlib import Path
+# from pypdf import PdfReader
+# from langchain_core.documents import Document
+# from langchain_text_splitters import RecursiveCharacterTextSplitter
+# from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_community.vectorstores import FAISS
+# import uuid
+# def clean_pdf_text(text):
+#     """Clean PDF text from excessive whitespace and artifacts"""
+#     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+#     text = re.sub(r'\b([A-Z]+)(\d+)\b', r'\1 \2', text)
+#     return re.sub(r'\s+', ' ', text).strip()
+
+# def process_pdf(pdf_path):
+#     """Process a PDF file with multiple fallback strategies"""
+#     try:
+#         # First try with pdfplumber for better text extraction
+#         with pdfplumber.open(pdf_path) as pdf:
+#             text = "\n".join(page.extract_text() for page in pdf.pages)
+#             metadata = pdf.metadata
+            
+#         return {
+#             "text": text,
+#             "metadata": {
+#                 "author": metadata.get("Author", "Unknown"),
+#                 "title": metadata.get("Title", pdf_path.name),
+#                 "source": str(pdf_path)
+#             }
+#         }
+#     except Exception as e:
+#         print(f"pdfplumber failed for {pdf_path.name}, trying pypdf: {str(e)}")
+#         try:
+#             # Fallback to pypdf
+#             with open(pdf_path, "rb") as f:
+#                 reader = PdfReader(f)
+#                 text = "\n".join(page.extract_text() for page in reader.pages)
+                
+#             return {
+#                 "text": text,
+#                 "metadata": {
+#                     "author": reader.metadata.get("/Author", "Unknown"),
+#                     "title": reader.metadata.get("/Title", pdf_path.name),
+#                     "source": str(pdf_path)
+#                 }
+#             }
+#         except Exception as e:
+#             print(f"All parsers failed for {pdf_path.name}: {str(e)}")
+#             return None
+
+# # Initialize database
+# conn = sqlite3.connect('metadata.db')
+# cursor = conn.cursor()
+# cursor.execute('''
+#     CREATE TABLE IF NOT EXISTS documents (
+#         id TEXT PRIMARY KEY,
+#         source TEXT,
+#         content TEXT,
+#         author TEXT,
+#         pdf_title TEXT,
+#         page INTEGER
+#     )
+# ''')
+
+# # Process PDFs
+# documents = []
+# pdf_files = list(Path("Data/").glob("**/*.pdf"))
+
+# for pdf_path in pdf_files:
+#     result = process_pdf(pdf_path)
+#     if result and result["text"].strip():
+#         # Create LangChain documents with page-wise content
+#         with pdfplumber.open(pdf_path) as pdf:
+#             for page_num, page in enumerate(pdf.pages):
+#                 page_text = page.extract_text() or ""
+#                 documents.append(Document(
+#                     page_content=clean_pdf_text(page_text),
+#                     metadata={
+#                         **result["metadata"],
+#                         "page": page_num + 1
+#                     }
+#                 ))
+
+# if not documents:
+#     print("No valid documents processed. Exiting.")
+#     conn.close()
+#     exit()
+
+# # Split documents
+# text_splitter = RecursiveCharacterTextSplitter(
+#     chunk_size=600,
+#     chunk_overlap=150,
+#     separators=["\n\n## ", "\n\n", "\n", ". ", "! ", "? "],
+#     length_function=len
+# )
+# chunks = text_splitter.split_documents(documents)
+
+# # Create vector store
+# embeddings = HuggingFaceEmbeddings(
+#     model_name="sentence-transformers/all-mpnet-base-v2",
+#     encode_kwargs={"normalize_embeddings": True}
+# )
+# FAISS.from_documents(chunks, embeddings).save_local("faiss_index")
+
+# # Store in SQLite
+# for idx, chunk in enumerate(chunks):
+#     cursor.execute('''
+#         INSERT OR REPLACE INTO documents 
+#         VALUES (?, ?, ?, ?, ?, ?)
+#     ''', (
+#         str(idx),
+#         chunk.metadata["source"],
+#         chunk.page_content,
+#         chunk.metadata["author"],
+#         chunk.metadata["title"],
+#         chunk.metadata["page"]
+#     ))
+
+# conn.commit()
+# conn.close()
+# print(f"Processed {len(chunks)} chunks from {len(documents)} pages")
+
+
+
+
 import re
 import sqlite3
-import os
 import pdfplumber
-from collections import defaultdict
-from langchain_community.document_loaders import PyPDFDirectoryLoader
+import uuid
+from pathlib import Path
+from pypdf import PdfReader
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
 def clean_pdf_text(text):
     """Clean PDF text from excessive whitespace and artifacts"""
-    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)  # Add space between camelCase
-    text = re.sub(r'\b([A-Z]+)(\d+)\b', r'\1 \2', text)  # Separate "EC2" -> "EC 2"
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+    text = re.sub(r'\b([A-Z]+)(\d+)\b', r'\1 \2', text)
     return re.sub(r'\s+', ' ', text).strip()
 
-# Initialize SQLite connection with enhanced schema
+def process_pdf(pdf_path):
+    """Process a PDF file with multiple fallback strategies"""
+    try:
+        # First try with pdfplumber for better text extraction
+        with pdfplumber.open(pdf_path) as pdf:
+            text = "\n".join(page.extract_text() for page in pdf.pages)
+            metadata = pdf.metadata
+            
+        return {
+            "text": text,
+            "metadata": {
+                "author": metadata.get("Author", "Unknown"),
+                "title": metadata.get("Title", pdf_path.name),
+                "source": str(pdf_path)
+            }
+        }
+    except Exception as e:
+        print(f"pdfplumber failed for {pdf_path.name}, trying pypdf: {str(e)}")
+        try:
+            # Fallback to pypdf
+            with open(pdf_path, "rb") as f:
+                reader = PdfReader(f)
+                text = "\n".join(page.extract_text() for page in reader.pages)
+                
+            return {
+                "text": text,
+                "metadata": {
+                    "author": reader.metadata.get("/Author", "Unknown"),
+                    "title": reader.metadata.get("/Title", pdf_path.name),
+                    "source": str(pdf_path)
+                }
+            }
+        except Exception as e:
+            print(f"All parsers failed for {pdf_path.name}: {str(e)}")
+            return None
+
+# Initialize database
 conn = sqlite3.connect('metadata.db')
 cursor = conn.cursor()
 cursor.execute('''
@@ -27,82 +191,72 @@ cursor.execute('''
         page INTEGER
     )
 ''')
-conn.commit()
 
-# Load and process PDFs
-loader = PyPDFDirectoryLoader(
-    "data/", 
-    glob="*.pdf",
-    recursive=True
-)
-documents = loader.load()
+# Process PDFs
+documents = []
+pdf_files = list(Path("Data/").glob("**/*.pdf"))
 
-# Group documents by source PDF and extract metadata
-doc_groups = defaultdict(list)
-for doc in documents:
-    doc_groups[doc.metadata['source']].append(doc)
+for pdf_path in pdf_files:
+    result = process_pdf(pdf_path)
+    if result and result["text"].strip():
+        # Create LangChain documents with page-wise content
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                page_text = page.extract_text() or ""
+                documents.append(Document(
+                    page_content=clean_pdf_text(page_text),
+                    metadata={
+                        **result["metadata"],
+                        "page": page_num + 1
+                    }
+                ))
 
-# Process each PDF file's documents
-for source_path, docs in doc_groups.items():
-    try:
-        with pdfplumber.open(source_path) as pdf:
-            # Extract PDF-level metadata
-            pdf_metadata = pdf.metadata
-            author = pdf_metadata.get('Author', 'Unknown')
-            title = pdf_metadata.get('Title', os.path.basename(source_path))
-            
-        # Update all documents from this PDF
-        for doc in docs:
-            doc.metadata.update({
-                'author': author,
-                'pdf_title': title,
-                'page': doc.metadata.get('page', 0)
-            })
-    except Exception as e:
-        print(f"Error processing {source_path}: {str(e)}")
-        continue
+if not documents:
+    print("No valid documents processed. Exiting.")
+    conn.close()
+    exit()
 
-# Split documents with PDF-optimized settings
+# Split documents
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=600,
     chunk_overlap=150,
-    separators=["\n\n## ", 
-                "\n\n", 
-                "\n", ". ", "!", "?"],
-
-    length_function=len,
-    add_start_index=True
+    separators=["\n\n## ", "\n\n", "\n", ". ", "! ", "? "],
+    length_function=len
 )
 chunks = text_splitter.split_documents(documents)
 
-# Process chunks
-for idx, chunk in enumerate(chunks):
-    chunk.metadata["id"] = str(idx)
-    chunk.page_content = clean_pdf_text(chunk.page_content)
+# Add UUIDs and validate metadata
+for chunk in chunks:
+    # Generate unique ID for each chunk
+    chunk.metadata["id"] = str(uuid.uuid4())
+    
+    # Ensure all required metadata fields exist
+    chunk.metadata.setdefault('source', 'Unknown')
+    chunk.metadata.setdefault('author', 'Unknown')
+    chunk.metadata.setdefault('title', Path(chunk.metadata['source']).name)
+    chunk.metadata.setdefault('page', 0)
 
-# Store in FAISS
+# Create vector store
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-mpnet-base-v2",
     encode_kwargs={"normalize_embeddings": True}
 )
-vector_store = FAISS.from_documents(chunks, embeddings)
-vector_store.save_local("faiss_index")
+FAISS.from_documents(chunks, embeddings).save_local("faiss_index")
 
-# Insert into SQLite with enhanced metadata
-for idx, chunk in enumerate(chunks):
+# Store in SQLite
+for chunk in chunks:
     cursor.execute('''
         INSERT OR REPLACE INTO documents 
-        (id, source, content, author, pdf_title, page)
         VALUES (?, ?, ?, ?, ?, ?)
     ''', (
-        str(idx),
-        chunk.metadata.get("source", ""),
+        chunk.metadata["id"],
+        chunk.metadata["source"],
         chunk.page_content,
-        chunk.metadata.get("author", ""),
-        chunk.metadata.get("pdf_title", ""),
-        chunk.metadata.get("page", 0)
+        chunk.metadata["author"],
+        chunk.metadata["title"],
+        chunk.metadata["page"]
     ))
 
 conn.commit()
 conn.close()
-print(f"Successfully stored {len(chunks)} document chunks")
+print(f"Processed {len(chunks)} chunks from {len(documents)} pages")

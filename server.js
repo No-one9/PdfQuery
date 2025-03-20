@@ -10,7 +10,7 @@ const multer = require('multer');
 const FLASK_API_URL="http://127.0.0.1:8000/query"
 
 const storage = multer.diskStorage({
-    destination: 'data/',
+    destination: 'Data/',
     filename: (req, file, cb) => {
         const sanitizedName = path.basename(file.originalname);
         cb(null, sanitizedName);
@@ -60,24 +60,57 @@ app.use(express.json());
 
 app.use(express.static(path.join(__dirname,'public')));
 
-app.post("/ask",async(req,res)=>{
-    const{query}=req.body
-    if(!query){
-        return res.status(400).json({error:"Query text is required"})
+app.post("/ask", async (req, res) => {
+    const { query } = req.body;
+    
+    if (!query || typeof query !== 'string') {
+        return res.status(400).json({ 
+            error: "Valid query text is required" 
+        });
     }
-    try{
-        const response=await axios.post(FLASK_API_URL,{query});
-        res.json(response.data)
-    }
-    catch(error){
-        console.error("Error calling Flask API:", error.message);
+
+    try {
+        const pythonProcess = spawn('python3', ['query_data.py', query]);
+        let responseData = '';
+        let errorData = '';
+
+        pythonProcess.stdout.on('data', (data) => {
+            responseData += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+            errorData += data.toString();
+        });
+
+        pythonProcess.on('close', (code) => {
+            if (code !== 0) {
+                console.error('Query error:', errorData);
+                return res.status(500).json({
+                    error: "Query processing failed",
+                    details: errorData
+                });
+            }
+
+            try {
+                const result = JSON.parse(responseData);
+                res.json(result);
+            } catch (parseError) {
+                console.error('Response parse error:', parseError);
+                res.status(500).json({
+                    error: "Invalid response format",
+                    details: responseData
+                });
+            }
+        });
+
+    } catch (error) {
+        console.error("Server error:", error);
         res.status(500).json({
             error: "Internal server error",
-            details:error.response?.data || error.message
+            details: error.message
         });
     }
 });
-
 app.listen(PORT,()=>{
     console.log(`Node.js server running on http://localhost:${PORT}`)
 })
