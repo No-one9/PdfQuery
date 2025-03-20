@@ -1,118 +1,5 @@
-# # query_data.py
-# import argparse
-# from langchain_community.vectorstores import FAISS
-# from langchain_huggingface import HuggingFaceEmbeddings
-# from langchain_huggingface import HuggingFaceEndpoint
-# from langchain.prompts import ChatPromptTemplate
-# import re
-# from dotenv import load_dotenv
-# import os
-
-# load_dotenv()
-
-# FAISS_PATH = "faiss_index"
-# CONFIDENCE_THRESHOLD=0.4
-# BANNED_PHRASES=[
-#     "we can infer", "it is possible"
-# ]
-
-# # PROMPT_TEMPLATE = """
-# # Answer the question concisely using only the provided context. If the answer isn't in the context, say "I don't know."
-
-# # Context:
-# # {context}
-
-# # Question: {question}
-
-# # Answer:
-# # """
-# PROMPT_TEMPLATE = """
-# Answer ONLY using the context below. If unsure, say "I don't know".
-# 1. If the answer isn't directly in the context, say "I don't know"
-# 2. Never mention "context" or "document" in the answer
-# 3. Never make assumptions or guesses
-# 4. If asked about unknown entities, say "I don't know"
-
-# Context:
-# {context}
-
-# Question: {question}
-
-# Strict Rules:
-# 1. Never mention "context" in the answer
-# 2. Never invent answers
-# 3. If unrelated to Alice in Wonderland, say "I don't know"
-
-# Answer:
-# """
-
-# def is_irrelevant(response):
-#     return any(phrase in response.lower() for phrase in BANNED_PHRASES)
-
-# def main():
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument("query_text", type=str, help="The query text.")
-#     args = parser.parse_args()
-#     query_text = args.query_text
-
-#     # Initialize embeddings
-#     embeddings = HuggingFaceEmbeddings(
-#         model_name="sentence-transformers/all-mpnet-base-v2",
-#         encode_kwargs={"normalize_embeddings": True}
-#     )
-#     test_embedding = embeddings.embed_query("test")
-#     print(f"Embedding dimensions: {len(test_embedding)}")
-#     # Load FAISS index
-#     try:
-#         db = FAISS.load_local(
-#             FAISS_PATH,
-#             embeddings,
-#             allow_dangerous_deserialization=True
-#         )
-#     except Exception as e:
-#         print(f"Error loading database: {e}")
-#         return
-
-#     # Search with scores
-#     results = db.similarity_search_with_relevance_scores(query_text, k=5)
-#     filtered=[doc for doc, score in results if score > CONFIDENCE_THRESHOLD]
-#     if not filtered:
-#         print("Final Answer:\nI don't know.")
-#         return
-
-#     print(f"Top {len(results)} results:")
-#     for i, (doc, score) in enumerate(zip(filtered,[s for _, s in results])):
-#         print(f"\nResult {i+1} (Similarity: {score:.3f}):")
-#         print(f"Content: {doc.page_content[:150]}...")
-#         print(f"Source: {doc.metadata.get('source', 'unknown')}")
-
-#     # Generate prompt
-#     context_text = "\n\n---\n\n".join([doc.page_content for doc, _ in results])
-#     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-#     prompt = prompt_template.format(context=context_text, question=query_text)
-
-#     # Get answer using Hugging Face Endpoint
-#     try:
-#         llm = HuggingFaceEndpoint(
-#             repo_id="HuggingFaceH4/zephyr-7b-beta",
-#             task="text-generation",
-#             max_new_tokens=100,  # Limit response length
-#             temperature=0.2,     # Reduce randomness
-#             repetition_penalty=1.2
-#         )
-#         response = llm.invoke(prompt)
-        
-#         print("\nFinal Answer:")
-#         print(response.strip())
-        
-#     except Exception as e:
-#         print(f"Error generating answer: {e}")
-
-# if __name__ == "__main__":
-#     main()
-
-
 #query_data.py
+import hashlib
 import argparse
 import sqlite3
 import re
@@ -133,10 +20,15 @@ BANNED_PHRASES = ["we can infer", "it is possible"]
 
 PROMPT_TEMPLATE = """
 Follow ALL rules:
+1. Answer ONLY the given question using the context. DO NOT generate additional questions.
 2. Mention the source filename ONLY ONCE
 3. NEVER mention confidence scores
 4. Avoid phrases like "no further information"
-
+5. Explain technical terms simply
+6. Include book examples if available
+7. If unsure, say "The book doesn't explicitly explain this"
+8. Say "not discussed" for unknown terms
+9. Never guess translations
 Context:
 {context}
 
@@ -158,27 +50,22 @@ def get_metadata_from_sqlite(doc_id):
         return ("Unknown", None)
     finally:
         conn.close()
+def validate_answer(response, context):
+    """Prevent hallucinated answers FIRST"""
+    # forbidden_phrases = ["translates to", "means in English", "refers to"]
+    # if any(phrase in response.lower() for phrase in forbidden_phrases):
+    #     return "This information is not explicitly stated in the text."
+    return response
 
 def post_process_response(response):
-    """Clean up LLM response"""
-    # Remove ALL confidence score references
-    response = re.sub(
-        r"\b(confidence|confidences|confidence scores?)( of|:)? \d+\.\d+(\s?and \d+\.\d+)?\b", 
-        "", 
-        response, 
-        flags=re.IGNORECASE
-    )
+    """Then clean up formatting"""
+    # Remove confidence scores
+    response = re.sub(r"\bconfidence:? \d+\.\d+\b", "", response, flags=re.IGNORECASE)
     
-    # Remove banned phrases and redundant filename mentions
-    response = re.sub(r"\bfilenames?\b", "file", response, flags=re.IGNORECASE)
-    response = response.replace("No further information", "")
-    
-    # Split sentences properly and truncate
-    sentences = re.split(r"(?<=[.!?]) +", response)  # Split on sentence endings
-    if len(sentences) > 3:
-        sentences = sentences[:3]
-        sentences[-1] = re.sub(r"[,.!?]*$", ".", sentences[-1])  # Ensure proper ending
-    return " ".join(sentences).strip()
+    # Formatting cleanup
+    response = re.sub(r"\bfilenames?\b", "document", response, flags=re.IGNORECASE)
+    sentences = re.split(r"(?<=[.!?]) +", response)
+    return " ".join(sentences[:3]).strip()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -205,7 +92,12 @@ def main():
 
     # Search FAISS with confidence threshold
     results = db.similarity_search_with_relevance_scores(query_text, k=5)
-    filtered = [(doc, score) for doc, score in results if score > CONFIDENCE_THRESHOLD]
+    # filtered = [(doc, abs(score)) for doc, score in results if abs(score) > CONFIDENCE_THRESHOLD]
+    filtered= sorted(
+        [(doc, abs(score)) for doc, score in results if abs(score) > 0],  # Only positive scores
+        key=lambda x: x[1], 
+        reverse=True  # Highest scores first
+    )[:5]
     # After similarity search
     print(f"\nRaw Scores: {[score for _, score in results]}")
     print(f"Top Chunk: {filtered[0][0].page_content if filtered else 'None'}")
@@ -239,7 +131,7 @@ def main():
             max_tokens=150,
             temperature=0.3
         ).choices[0].message.content
-        
+        response = validate_answer(response, context_text)
         # Post-processing
         response = post_process_response(response)
         

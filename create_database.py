@@ -1,114 +1,108 @@
-from langchain_community.document_loaders import DirectoryLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings  # Updated import
-from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import PyPDFDirectoryLoader
+import re
 import sqlite3
 import os
+import pdfplumber
+from collections import defaultdict
+from langchain_community.document_loaders import PyPDFDirectoryLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 
-# Initialize SQLite connection
+def clean_pdf_text(text):
+    """Clean PDF text from excessive whitespace and artifacts"""
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)  # Add space between camelCase
+    text = re.sub(r'\b([A-Z]+)(\d+)\b', r'\1 \2', text)  # Separate "EC2" -> "EC 2"
+    return re.sub(r'\s+', ' ', text).strip()
+
+# Initialize SQLite connection with enhanced schema
 conn = sqlite3.connect('metadata.db')
 cursor = conn.cursor()
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS documents (
         id TEXT PRIMARY KEY,
         source TEXT,
-        content TEXT
+        content TEXT,
+        author TEXT,
+        pdf_title TEXT,
+        page INTEGER
     )
 ''')
 conn.commit()
 
-# Load and split documents
-loader = DirectoryLoader("data/", glob="*.md")
+# Load and process PDFs
+loader = PyPDFDirectoryLoader(
+    "data/", 
+    glob="*.pdf",
+    recursive=True
+)
 documents = loader.load()
 
+# Group documents by source PDF and extract metadata
+doc_groups = defaultdict(list)
+for doc in documents:
+    doc_groups[doc.metadata['source']].append(doc)
+
+# Process each PDF file's documents
+for source_path, docs in doc_groups.items():
+    try:
+        with pdfplumber.open(source_path) as pdf:
+            # Extract PDF-level metadata
+            pdf_metadata = pdf.metadata
+            author = pdf_metadata.get('Author', 'Unknown')
+            title = pdf_metadata.get('Title', os.path.basename(source_path))
+            
+        # Update all documents from this PDF
+        for doc in docs:
+            doc.metadata.update({
+                'author': author,
+                'pdf_title': title,
+                'page': doc.metadata.get('page', 0)
+            })
+    except Exception as e:
+        print(f"Error processing {source_path}: {str(e)}")
+        continue
+
+# Split documents with PDF-optimized settings
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
+    chunk_size=600,
     chunk_overlap=150,
-    separators=["\n\n", "\n", " ", ""],   # Fixed typo (was chunk_overelap)
+    separators=["\n\n## ", 
+                "\n\n", 
+                "\n", ". ", "!", "?"],
+
     length_function=len,
     add_start_index=True
 )
 chunks = text_splitter.split_documents(documents)
 
-# Store in FAISS and SQLite
+# Process chunks
+for idx, chunk in enumerate(chunks):
+    chunk.metadata["id"] = str(idx)
+    chunk.page_content = clean_pdf_text(chunk.page_content)
+
+# Store in FAISS
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-mpnet-base-v2",
-    encode_kwargs={"normalize_embeddings": True}  # Fixed case (V2 → v2)
+    encode_kwargs={"normalize_embeddings": True}
 )
-
-# Add IDs to metadata before saving
-for idx, chunk in enumerate(chunks):
-    chunk.metadata["id"] = str(idx)  # Critical for SQLite lookup
-
 vector_store = FAISS.from_documents(chunks, embeddings)
-vector_store.save_local("faiss_index")  # Fixed typo (fiass_index → faiss_index)
+vector_store.save_local("faiss_index")
 
-# Insert metadata into SQLite
+# Insert into SQLite with enhanced metadata
 for idx, chunk in enumerate(chunks):
     cursor.execute('''
-        INSERT OR REPLACE INTO documents (id, source, content)
-        VALUES (?, ?, ?)
+        INSERT OR REPLACE INTO documents 
+        (id, source, content, author, pdf_title, page)
+        VALUES (?, ?, ?, ?, ?, ?)
     ''', (
         str(idx),
         chunk.metadata.get("source", ""),
-        chunk.page_content
+        chunk.page_content,
+        chunk.metadata.get("author", ""),
+        chunk.metadata.get("pdf_title", ""),
+        chunk.metadata.get("page", 0)
     ))
 
 conn.commit()
 conn.close()
-print(f"Stored {len(chunks)} documents")  # Proper capitalization
-
-
-# model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-
-# load_dotenv()
-# FAISS_PATH = "faiss_index"
-# DATA_PATH = "data/"
-
-# def load_documents():
-#     """Load documents from the specified directory."""
-#     loader = DirectoryLoader(DATA_PATH, glob="*.md")
-#     documents = loader.load()
-#     return documents
-
-# def split_text(documents: list[Document]):
-#     """Split documents into smaller chunks."""
-#     text_splitter = RecursiveCharacterTextSplitter(
-#         chunk_size=300,
-#         chunk_overlap=100,
-#         length_function=len,  # Fixed typo
-#         add_start_index=True,
-#     )
-#     chunks = text_splitter.split_documents(documents)
-#     # print(f"Split {len(documents)} documents into {len(chunks)} chunks.")
-    
-#     # # Print an example chunk for debugging
-#     # if chunks:
-#     #     document = chunks[0]  # Print the first chunk instead of 10 (to avoid index error)
-#     #     print(document.page_content)
-#     #     print(document.metadata)
-    
-#     return chunks
-
-# def save_to_faiss(chunks):
-#     """Save document chunks to Chroma database."""
-#     # Clear out the database first.
-#     if os.path.exists(FAISS_PATH):
-#         shutil.rmtree(FAISS_PATH)
-
-#     # Create a new DB from the documents.
-#     db = FAISS.from_documents(
-#         chunks, HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-#     )
-#     db.save_local(FAISS_PATH)
-#     print(f"Saved {len(chunks)} chunks to {FAISS_PATH}.")
-
-# def generate_data_store():
-#     """Load, split, and store documents."""
-#     documents = load_documents()
-#     chunks = split_text(documents)  # Fixed function call
-#     save_to_faiss(chunks)
-# if __name__=="__main__":
-    
-#     generate_data_store()
+print(f"Successfully stored {len(chunks)} document chunks")

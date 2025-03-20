@@ -11,6 +11,10 @@
   "description": "",
   "dependencies": {
     "axios": "^1.8.3",
-    "express": "^4.21.2"
+    "child_process": "^1.0.2",
+    "express": "^4.21.2",
+    "fs": "^0.0.1-security",
+    "multer": "^1.4.5-lts.1",
+    "path": "^0.12.7"
   }
 }

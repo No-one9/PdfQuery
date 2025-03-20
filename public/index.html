@@ -1,25 +1,81 @@
 <html>
-    <head>
-        <title>
-            RAG Question Answering
-        </title>
-        <style>
-            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-            #response { margin-top: 20px; white-space: pre-wrap; }
-        </style>
-    </head>
-    <body>
-        <h1>
-            Ask Question
-        </h1>
-        <input type="text" id="queryInput" placeholder="Enter your Question" style="width: 300px; padding: 8px;">
+
+<head>
+    <title>
+        PDF Query
+    </title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        #response {
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>
+        PDF Query
+    </h1>
+    <!-- PDF Upload Section -->
+
+
+
+
+    
+    <div class="upload-section">
+        <input type="file" id="pdfFile" accept=".pdf">
+        <button onclick="uploadPDF()">Upload PDF</button>
+        <div id="uploadStatus"></div>
+    </div>
+
+    <!-- Query Section -->
+    <div class="query-section">
+        <input type="text" id="queryInput" placeholder="Ask about the PDF content...">
         <button onclick="askQuestion()">Ask</button>
         <div id="response"></div>
-        <script>
-            async function askQuestion() {
+    </div>
+
+    <script>
+        // PDF Upload Handler
+        async function uploadPDF() {
+            const fileInput = document.getElementById('pdfFile');
+            const statusDiv = document.getElementById('uploadStatus');
+
+            if (!fileInput.files[0]) {
+                statusDiv.textContent = "Please select a PDF file first.";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('pdf', fileInput.files[0]);
+
+            try {
+                statusDiv.textContent = "Uploading and processing PDF...";
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                statusDiv.textContent = result.success ?
+                    "PDF processed successfully!" :
+                    `Error: ${result.error}`;
+
+            } catch (error) {
+                statusDiv.textContent = `Upload failed: ${error.message}`;
+            }
+        }
+        async function askQuestion() {
             const query = document.getElementById('queryInput').value;
             const responseDiv = document.getElementById('response');
-            
+
             if (!query) {
                 responseDiv.textContent = "Please enter a question.";
                 return;
@@ -33,12 +89,12 @@
                 });
 
                 const data = await response.json();
-                
+
                 if (data.error) {
                     responseDiv.textContent = `Error: ${data.error}`;
                 } else {
                     // responseDiv.textContent = data.answer;
-                    responseDiv.innerHTML=`
+                    responseDiv.innerHTML = `
                         <p><strong>Answer:</strong>${data.answer}</p>
                         <p><strong>Source:</strong>${data.source}</p>
                         <p><strong>Confidence:</strong>${data.confidence.toFixed(2)}</p>
@@ -49,6 +105,7 @@
                 responseDiv.textContent = `Error: ${error.message}`;
             }
         }
-        </script>
-    </body>
+    </script>
+</body>
+
 </html>
