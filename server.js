@@ -1,4 +1,3 @@
-// server.js
 const { spawn } = require('child_process');
 const express= require("express");
 const axios=require('axios');
