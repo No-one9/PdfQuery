@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@material/fab": "^14.0.0",
     "axios": "^1.8.3",
     "child_process": "^1.0.2",
     "express": "^4.21.2",

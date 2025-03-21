@@ -1,6 +1,9 @@
-<html>
+<!-- <html>
 
 <head>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/material-components-web/9.0.0/material-components-web.min.css">
+     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
     <title>
         PDF Query
     </title>
@@ -16,30 +19,54 @@
             margin-top: 20px;
             white-space: pre-wrap;
         }
+        .card {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .card-header {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
     </style>
 </head>
 
 <body>
+    <div class="card">
+    <div class="card-header">
     <h1>
         PDF Query
     </h1>
-    <!-- PDF Upload Section -->
-
-
-
-
-    
+    </div>
     <div class="upload-section">
-        <input type="file" id="pdfFile" accept=".pdf">
-        <button onclick="uploadPDF()">Upload PDF</button>
+        <br>
+        <input class="mdc-button mat-stroked-button" type="file" id="pdfFile" accept=".pdf">
+        <button class="mdc-button mat-stroked-button" onclick="uploadPDF()">Upload PDF</button>
+
         <div id="uploadStatus"></div>
     </div>
 
-    <!-- Query Section -->
     <div class="query-section">
-        <input type="text" id="queryInput" placeholder="Ask about the PDF content...">
-        <button onclick="askQuestion()">Ask</button>
-        <div id="response"></div>
+        <mat-form-field>
+            <input matInput type="text" id="queryInput" placeholder="Ask about the PDF content...">
+        </mat-form-field>
+      
+        <button class="mdc-button mat-stroked-button" onclick="askQuestion()">Ask</button>
+        
+        <mat-form-field appearance="fill">
+            <textarea matInput id="response" placeholder="Response will appear here..." rows="4" readonly></textarea>
+        </mat-form-field>
     </div>
 
     <script>
@@ -106,6 +133,183 @@
             }
         }
     </script>
+    </div>
 </body>
+
+</html> -->
+
+
+
+<html>
+
+<head>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/material-components-web/9.0.0/material-components-web.min.css">
+    <title>
+        PDF Query
+    </title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        #response {
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+
+        .card {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .card-header {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+
+    <!-- PDF Query Card Section -->
+    <div class="card">
+        <div class="card-header">
+            <h1>PDF Query</h1>
+        </div>
+        <div class="upload-section">
+            <br>
+            <input class="mdc-button mat-stroked-button" type="file" id="pdfFile" accept=".pdf">
+            <button class="mdc-button mat-stroked-button" onclick="uploadPDF()">Upload PDF</button>
+            <div id="uploadStatus"></div>
+        </div>
+
+        <!-- Query Section -->
+        <div class="query-section">
+            <mat-form-field>
+                <input matInput type="text" id="queryInput" placeholder="Ask about the PDF content...">
+            </mat-form-field>
+            <button class="mdc-button mat-stroked-button" onclick="askQuestion()">Ask</button>
+            <!-- </div> -->
+
+
+
+            <!-- Response Card Section -->
+            <div class="card" >
+            <div class="card-header" style="margin-bottom: 20px;">
+                <h1>Response</h1>
+            </div>
+            <div class="card-body">
+                <mat-form-field appearance="fill"><strong>
+                    <textarea matInput id="response" placeholder="Response will appear here..." rows="10"
+                        style="height:200px;font-size:14pt;width: 100%;" readonly></textarea></strong>
+                </mat-form-field>
+                <br>
+                
+
+
+            </div>
+            <div class="card-body">
+                <mat-form-field appearance="fill"><strong>
+                    <textarea matInput id="response-src" placeholder="source will appear here..." rows="0"
+                        style="height:200px;font-size:14pt;width: 100%;" readonly></textarea></strong>
+                </mat-form-field>
+            </div>
+            
+            </div>
+        </div>
+
+        <script>
+            // PDF Upload Handler
+            async function uploadPDF() {
+                const fileInput = document.getElementById('pdfFile');
+                const statusDiv = document.getElementById('uploadStatus');
+
+                if (!fileInput.files[0]) {
+                    statusDiv.textContent = "Please select a PDF file first.";
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('pdf', fileInput.files[0]);
+                try {
+                    statusDiv.textContent = "Uploading and processing PDF...";
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    statusDiv.textContent = result.success ?
+                        "PDF processed successfully!" :
+                        `Error: ${result.error}`;
+
+                } catch (error) {
+                    statusDiv.textContent = `Upload failed: ${error.message}`;
+                }
+            }
+
+            async function askQuestion() {
+                const query = document.getElementById('queryInput').value;
+                const responseDiv = document.getElementById('response');
+                const srcresponseDiv=document.getElementById('response-src')
+
+                if (!query) {
+                    responseDiv.textContent = "Please enter a question.";
+                    srcresponseDiv.textContent="Please enter a question."
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/ask', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: query })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.error) {
+                        responseDiv.textContent = `Error: ${data.error}`;
+                        srcresponseDiv.textContent=`Error: ${data.error}`;
+                    } else {
+                        responseDiv.innerHTML = `
+                        Answer:${data.answer}
+                    
+                        // Source:${data.source}
+                
+                        // Confidence:${data.confidence.toFixed(2)}
+                    `;
+                    srcresponseDiv.innerHTML=`
+                        Source:${data.source}
+                
+                        Confidence:${data.confidence.toFixed(2)}
+                    `;
+                    }
+                } catch (error) {
+                    responseDiv.textContent = `Error: ${error.message}`;
+                    srcresponseDiv.textContent=`Error: ${error.message}`;
+                }
+            }
+        </script>
+        </div>
+</body>
+<footer>
+   Copyright © 2025 Lokesh Cherukuri. All Rights Reserved.
+</footer>
 
 </html>

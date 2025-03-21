@@ -9,6 +9,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
+
 def clean_pdf_text(text):
     """Clean PDF text from excessive whitespace and artifacts"""
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
@@ -16,6 +17,8 @@ def clean_pdf_text(text):
     return re.sub(r'\s+', ' ', text).strip()
 
 def process_pdf(pdf_path):
+    # valid_files = []
+    # corrupt_files = []
     """Process a PDF file with multiple fallback strategies"""
     try:
         # First try with pdfplumber for better text extraction
