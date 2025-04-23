@@ -9,3 +9,4 @@ __pycache__/
 .DS_Store
 Data/
 fiass_index/
+.metadata.db
