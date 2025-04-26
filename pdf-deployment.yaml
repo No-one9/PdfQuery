@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdfquery-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pdfquery-app
+  template:
+    metadata:
+      labels:
+        app: pdfquery-app
+    spec:
+      containers:
+      - name: pdfquery-container
+        image: lokesh7/pdfquery:v2
+        ports:
+        - containerPort: 3000
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
